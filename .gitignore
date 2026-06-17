@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# VSCode / IDE
+.vscode/
+.idea/
+
+# Build artifacts
+PomodoroApp/build/
+
+# Python
+__pycache__/
+*.pyc
