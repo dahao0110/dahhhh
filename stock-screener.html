@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>动态选股筛选器</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface-hover: #222635;
+    --border: #2a2d3a; --text: #e1e4ed; --text-secondary: #8b8fa8;
+    --accent: #6366f1; --accent-glow: rgba(99,102,241,0.3);
+    --green: #22c55e; --red: #ef4444; --orange: #f59e0b;
+    --radius: 14px; --radius-sm: 8px; --transition: 0.25s ease;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background: radial-gradient(ellipse at 20% 20%, rgba(99,102,241,0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 50%, rgba(34,197,94,0.04) 0%, transparent 50%);
+    pointer-events: none; z-index: 0;
+  }
+  .container { max-width: 1340px; margin: 0 auto; padding: 32px 24px 60px; position: relative; z-index: 1; }
+
+  /* header */
+  .header { text-align: center; margin-bottom: 28px; }
+  .header h1 { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #e1e4ed, #a5a9c0);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .header .subtitle { color: var(--text-secondary); font-size: 0.85rem; margin-top: 4px; }
+
+  /* filter cards */
+  .filter-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .filter-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; transition: var(--transition); }
+  .filter-card:hover { border-color: #3a3d50; }
+  .filter-card .filter-label { font-size: 0.78rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 8px; }
+  .filter-card .filter-value { font-size: 1.05rem; font-weight: 700; color: var(--text); }
+  .filter-card input[type="range"] { width: 100%; margin-top: 8px; -webkit-appearance: none; height: 6px; background: var(--border); border-radius: 3px; outline: none; }
+  .filter-card input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; box-shadow: 0 0 0 4px var(--accent-glow); }
+
+  .industry-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .industry-tag { padding: 4px 12px; border-radius: 20px; font-size: 0.74rem; cursor: pointer; transition: var(--transition); font-weight: 500;
+    border: 1px solid var(--border); background: transparent; color: var(--text-secondary); font-family: inherit; user-select: none; }
+  .industry-tag.active { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 2px 8px var(--accent-glow); }
+  .industry-tag:hover:not(.active) { border-color: #4a4d60; color: var(--text); }
+
+  /* stats */
+  .stats-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+  .stats-info { display: flex; gap: 20px; flex-wrap: wrap; }
+  .stat-item { font-size: 0.85rem; }
+  .stat-item .num { font-weight: 700; font-size: 1.15rem; }
+  .stat-item.matched .num { color: var(--green); }
+  .stat-item.total .num { color: var(--accent); }
+  .stat-item.rate .num { color: var(--orange); }
+  .btn { padding: 9px 20px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; border: none; cursor: pointer; transition: var(--transition); font-family: inherit; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 12px var(--accent-glow); }
+  .btn-primary:hover { background: #7577f5; }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
+
+  /* table */
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+  thead th { padding: 12px 14px; text-align: left; font-weight: 600; color: var(--text-secondary); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--border); white-space: nowrap; position: sticky; top: 0; background: var(--surface); }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); white-space: nowrap; }
+  tbody tr { transition: var(--transition); }
+  tbody tr:hover { background: var(--surface-hover); }
+  tbody tr:last-child td { border-bottom: none; }
+  .stock-code { font-weight: 600; color: var(--accent); }
+  .stock-name { font-weight: 600; }
+  .up { color: var(--red); }
+  .down { color: var(--green); }
+  .tag-sm { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; margin: 1px 2px; }
+  .tag-limit-up { background: rgba(239,68,68,0.15); color: var(--red); }
+  .tag-growth { background: rgba(34,197,94,0.12); color: var(--green); }
+  .tag-industry { background: rgba(99,102,241,0.12); color: #818cf8; }
+  .tag-warn { background: rgba(245,158,11,0.12); color: #f59e0b; }
+  .tag-fail { background: rgba(239,68,68,0.1); color: #ef4444; }
+
+  /* states */
+  .loading-wrap { text-align: center; padding: 60px 20px; }
+  .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty-state { text-align: center; padding: 50px 20px; color: var(--text-secondary); }
+  .empty-state .icon { font-size: 2.5rem; margin-bottom: 10px; opacity: 0.4; }
+
+  /* notice banner */
+  .notice { margin-bottom: 16px; padding: 12px 18px; border-radius: var(--radius-sm); font-size: 0.82rem; display: flex; align-items: center; gap: 10px; }
+  .notice-warn { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: #fbbf24; }
+  .notice-success { background: rgba(34,197,94,0.06); border: 1px solid rgba(34,197,94,0.15); color: #4ade80; }
+  .notice-error { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.15); color: #f87171; }
+
+  /* rules */
+  .rules-note { margin-top: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 22px; }
+  .rules-note h3 { font-size: 0.88rem; margin-bottom: 10px; color: var(--text-secondary); }
+  .rules-note .rule-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 6px; }
+  .rules-note .rule-item { font-size: 0.8rem; color: var(--text-secondary); padding: 7px 10px; border-radius: 6px; background: rgba(255,255,255,0.02); display: flex; align-items: center; gap: 8px; }
+  .rules-note .rule-num { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.68rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  @media (max-width: 768px) { .container { padding: 16px 10px 40px; } .header h1 { font-size: 1.3rem; } .filter-panel { grid-template-columns: 1fr; } .stats-bar { flex-direction: column; align-items: flex-start; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header class="header">
+    <h1>📊 动态选股筛选器</h1>
+    <p class="subtitle">基于十五五规划方向 · A股智能筛选</p>
+  </header>
+
+  <!-- 状态提示条 -->
+  <div class="notice notice-warn" id="dataSourceNotice" style="display:none;">
+    <span id="dataSourceIcon">⏳</span>
+    <span id="dataSourceMsg">正在加载...</span>
+  </div>
+
+  <!-- 筛选面板 -->
+  <div class="filter-panel">
+    <div class="filter-card">
+      <div class="filter-label">💰 总市值上限（亿元）</div>
+      <div class="filter-value" id="capDisplay">≤ 1000 亿</div>
+      <input type="range" id="capSlider" min="10" max="2000" value="1000" step="10" oninput="updateCap(this.value)">
+    </div>
+    <div class="filter-card">
+      <div class="filter-label">📈 最低年营收增速</div>
+      <div class="filter-value" id="growthDisplay">≥ 10%</div>
+      <input type="range" id="growthSlider" min="0" max="50" value="10" step="1" oninput="updateGrowth(this.value)">
+    </div>
+    <div class="filter-card">
+      <div class="filter-label">📅 近 N 个交易日有涨停</div>
+      <div class="filter-value" id="limitUpDisplay">近 10 日 ≥ 1 次</div>
+      <input type="range" id="limitUpDays" min="5" max="30" value="10" step="1" oninput="updateLimitUp(this.value)">
+    </div>
+    <div class="filter-card" style="grid-column: 1 / -1;">
+      <div class="filter-label">🏭 十五五规划热点行业（可多选，至少保留1个）</div>
+      <div class="industry-tags" id="industryTags"></div>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stats-info">
+      <div class="stat-item total">数据池 <span class="num" id="statTotal">--</span> 只</div>
+      <div class="stat-item matched">符合条件 <span class="num" id="statMatch">--</span> 只</div>
+      <div class="stat-item rate">命中率 <span class="num" id="statRate">--</span></div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" onclick="resetFilters()">↺ 重置条件</button>
+      <button class="btn btn-primary" onclick="loadLiveData()">🔄 加载实时数据</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>代码</th><th>名称</th><th>最新价</th><th>涨跌幅</th><th>市值(亿)</th><th>PE</th><th>所属行业</th><th>十五五板块</th><th>近N日涨停</th><th>3年营收增速</th><th>规则匹配</th>
+        </tr></thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="rules-note">
+    <h3>📋 当前筛选规则</h3>
+    <div class="rule-list">
+      <div class="rule-item"><span class="rule-num">1</span>总市值 &lt; 1000 亿元（可调）</div>
+      <div class="rule-item"><span class="rule-num">2</span>连续3年营收增速 &gt; 10%（可调）</div>
+      <div class="rule-item"><span class="rule-num">3</span>属于十五五规划热点行业（可选）</div>
+      <div class="rule-item"><span class="rule-num">4</span>近N个交易日 ≥ 1次涨停（可调）</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// 十五五热点行业关键词
+// ═══════════════════════════════════════════
+const HOT_INDUSTRIES = {
+  '半导体':       ['半导体','芯片','集成电路','晶圆','封测','光刻','EDA'],
+  '人工智能':     ['人工智能','AI','大模型','算力','算法','机器视觉'],
+  '新能源':       ['光伏','风电','储能','锂电池','固态电池','钠电池','逆变器','HJT','TOPCon'],
+  '新能源汽车':   ['新能源车','汽车零部件','智能驾驶','充电桩','一体化压铸','激光雷达'],
+  '生物医药':     ['生物医药','创新药','CXO','医疗器械','基因','细胞治疗','疫苗'],
+  '数字经济':     ['数字经济','数据要素','信创','云计算','大数据','东数西算','数据'],
+  '高端制造':     ['工业母机','机器人','减速器','专精特新','数控','激光'],
+  '航空航天':     ['航空航天','商业航天','低空经济','卫星','无人机','eVTOL'],
+  '新材料':       ['新材料','碳纤维','稀土永磁','超导','纳米','膜'],
+  '碳中和':       ['环保','碳交易','CCUS','绿色能源','节能','减排'],
+  '量子科技':     ['量子','量子计算','量子通信'],
+  '6G通信':       ['6G','5G-A','通信设备','光模块','光通信','卫星互联网','PCB'],
+};
+
+// ═══════════════════════════════════════════
+// 内嵌基准数据（真实A股 ~80只, 覆盖十二个热点行业）
+// 包含: code, name, price, pctChg, marketCap(亿), pe, industry, hotTags[], limitUpDays[],
+//       rev3y (连续3年增速, null=暂无)
+// limitUpDays[] 存储近期涨停日期(YYYY-MM-DD), 用于判断"近N日有涨停"
+// ═══════════════════════════════════════════
+const EMBEDDED_STOCKS = [
+  // ── 半导体 ──
+  {code:"688981",name:"中芯国际",price:68.5,pctChg:1.2,marketCap:980,pe:45,industry:"半导体",tags:["半导体"],limitUpDays:[],rev3y:[8,12,5]},
+  {code:"002371",name:"北方华创",price:285.0,pctChg:-0.8,marketCap:1520,pe:38,industry:"半导体设备",tags:["半导体"],limitUpDays:[],rev3y:[35,28,22]},
+  {code:"603986",name:"兆易创新",price:78.3,pctChg:2.1,marketCap:520,pe:55,industry:"芯片设计",tags:["半导体"],limitUpDays:["2026-06-12"],rev3y:[15,18,20]},
+  {code:"688012",name:"中微公司",price:142.0,pctChg:0.5,marketCap:880,pe:60,industry:"半导体设备",tags:["半导体"],limitUpDays:[],rev3y:[25,30,28]},
+  {code:"300782",name:"卓胜微",price:88.5,pctChg:-1.5,marketCap:470,pe:42,industry:"射频芯片",tags:["半导体"],limitUpDays:[],rev3y:[12,15,10]},
+  {code:"002049",name:"紫光国微",price:62.0,pctChg:3.2,marketCap:526,pe:35,industry:"芯片",tags:["半导体"],limitUpDays:["2026-06-15"],rev3y:[18,20,22]},
+  {code:"688536",name:"思瑞浦",price:195.0,pctChg:0.3,marketCap:310,pe:80,industry:"模拟芯片",tags:["半导体"],limitUpDays:[],rev3y:[20,22,15]},
+
+  // ── 人工智能 ──
+  {code:"688111",name:"金山办公",price:320.0,pctChg:1.8,marketCap:1480,pe:65,industry:"办公软件",tags:["人工智能","数字经济"],limitUpDays:[],rev3y:[22,25,28]},
+  {code:"002230",name:"科大讯飞",price:45.2,pctChg:0.9,marketCap:1040,pe:120,industry:"人工智能",tags:["人工智能"],limitUpDays:[],rev3y:[8,12,10]},
+  {code:"300474",name:"景嘉微",price:88.0,pctChg:4.5,marketCap:405,pe:150,industry:"GPU",tags:["半导体","人工智能"],limitUpDays:["2026-06-17"],rev3y:[10,15,20]},
+  {code:"603019",name:"中科曙光",price:52.0,pctChg:1.2,marketCap:760,pe:40,industry:"算力服务器",tags:["人工智能"],limitUpDays:[],rev3y:[15,18,20]},
+  {code:"688256",name:"寒武纪",price:185.0,pctChg:5.2,marketCap:770,pe:-1,industry:"AI芯片",tags:["半导体","人工智能"],limitUpDays:["2026-06-16","2026-06-12"],rev3y:[30,25,35]},
+
+  // ── 新能源 ──
+  {code:"300750",name:"宁德时代",price:210.0,pctChg:-0.5,marketCap:9250,pe:22,industry:"锂电池",tags:["新能源","新能源汽车"],limitUpDays:[],rev3y:[40,35,18]},
+  {code:"601012",name:"隆基绿能",price:18.5,pctChg:0.8,marketCap:1400,pe:18,industry:"光伏",tags:["新能源"],limitUpDays:[],rev3y:[8,-5,-12]},
+  {code:"002459",name:"晶澳科技",price:15.2,pctChg:-1.2,marketCap:500,pe:12,industry:"光伏组件",tags:["新能源"],limitUpDays:[],rev3y:[30,20,5]},
+  {code:"300274",name:"阳光电源",price:85.0,pctChg:2.0,marketCap:1760,pe:28,industry:"逆变器",tags:["新能源"],limitUpDays:[],rev3y:[35,40,32]},
+  {code:"688390",name:"固德威",price:108.0,pctChg:3.5,marketCap:190,pe:35,industry:"逆变器",tags:["新能源"],limitUpDays:["2026-06-17"],rev3y:[50,45,38]},
+  {code:"300014",name:"亿纬锂能",price:42.0,pctChg:0.3,marketCap:860,pe:30,industry:"锂电池",tags:["新能源","新能源汽车"],limitUpDays:[],rev3y:[28,30,25]},
+  {code:"002812",name:"恩捷股份",price:55.0,pctChg:-0.8,marketCap:540,pe:20,industry:"锂电池隔膜",tags:["新能源","新能源汽车"],limitUpDays:[],rev3y:[35,25,15]},
+
+  // ── 新能源汽车 ──
+  {code:"002594",name:"比亚迪",price:280.0,pctChg:0.6,marketCap:8150,pe:28,industry:"新能源车",tags:["新能源汽车"],limitUpDays:[],rev3y:[45,38,35]},
+  {code:"300124",name:"汇川技术",price:60.0,pctChg:1.0,marketCap:1600,pe:38,industry:"工控/电驱",tags:["新能源汽车","高端制造"],limitUpDays:[],rev3y:[25,28,30]},
+  {code:"601689",name:"拓普集团",price:52.0,pctChg:2.2,marketCap:600,pe:32,industry:"汽车零部件",tags:["新能源汽车"],limitUpDays:[],rev3y:[30,32,28]},
+  {code:"002920",name:"德赛西威",price:95.0,pctChg:1.5,marketCap:525,pe:45,industry:"智能驾驶",tags:["新能源汽车","人工智能"],limitUpDays:[],rev3y:[40,35,30]},
+  {code:"300750",name:"宁德时代",price:210.0,pctChg:-0.5,marketCap:9250,pe:22,industry:"锂电池",tags:["新能源","新能源汽车"],limitUpDays:[],rev3y:[40,35,18]},
+
+  // ── 生物医药 ──
+  {code:"300760",name:"迈瑞医疗",price:280.0,pctChg:0.4,marketCap:3400,pe:32,industry:"医疗器械",tags:["生物医药"],limitUpDays:[],rev3y:[18,20,22]},
+  {code:"688180",name:"君实生物",price:32.0,pctChg:2.8,marketCap:315,pe:-1,industry:"创新药",tags:["生物医药"],limitUpDays:["2026-06-13"],rev3y:[25,30,35]},
+  {code:"300347",name:"泰格医药",price:58.0,pctChg:-0.3,marketCap:500,pe:28,industry:"CXO",tags:["生物医药"],limitUpDays:[],rev3y:[20,18,15]},
+  {code:"300122",name:"智飞生物",price:35.0,pctChg:1.0,marketCap:840,pe:15,industry:"疫苗",tags:["生物医药"],limitUpDays:[],rev3y:[12,10,8]},
+  {code:"688185",name:"康希诺",price:48.0,pctChg:5.5,marketCap:120,pe:-1,industry:"疫苗",tags:["生物医药"],limitUpDays:["2026-06-16"],rev3y:[25,30,40]},
+  {code:"300595",name:"欧普康视",price:22.0,pctChg:0.8,marketCap:195,pe:38,industry:"医疗器械",tags:["生物医药"],limitUpDays:[],rev3y:[22,25,20]},
+
+  // ── 数字经济 ──
+  {code:"300033",name:"同花顺",price:125.0,pctChg:2.5,marketCap:670,pe:42,industry:"金融IT",tags:["数字经济","人工智能"],limitUpDays:[],rev3y:[15,18,20]},
+  {code:"002410",name:"广联达",price:18.0,pctChg:0.5,marketCap:320,pe:55,industry:"建筑信息化",tags:["数字经济"],limitUpDays:[],rev3y:[12,10,15]},
+  {code:"688111",name:"金山办公",price:320.0,pctChg:1.8,marketCap:1480,pe:65,industry:"办公软件",tags:["人工智能","数字经济"],limitUpDays:[],rev3y:[22,25,28]},
+  {code:"300454",name:"深信服",price:68.0,pctChg:1.2,marketCap:285,pe:50,industry:"网络安全",tags:["数字经济"],limitUpDays:[],rev3y:[18,15,12]},
+  {code:"002439",name:"启明星辰",price:22.0,pctChg:0.8,marketCap:220,pe:35,industry:"网络安全",tags:["数字经济"],limitUpDays:[],rev3y:[10,12,15]},
+
+  // ── 高端制造 ──
+  {code:"300124",name:"汇川技术",price:60.0,pctChg:1.0,marketCap:1600,pe:38,industry:"工控/电驱",tags:["新能源汽车","高端制造"],limitUpDays:[],rev3y:[25,28,30]},
+  {code:"688017",name:"绿的谐波",price:128.0,pctChg:3.8,marketCap:215,pe:120,industry:"减速器",tags:["高端制造"],limitUpDays:["2026-06-17"],rev3y:[35,40,45]},
+  {code:"300161",name:"华中数控",price:32.0,pctChg:1.5,marketCap:64,pe:80,industry:"工业母机",tags:["高端制造"],limitUpDays:[],rev3y:[12,15,18]},
+  {code:"002747",name:"埃斯顿",price:18.5,pctChg:2.0,marketCap:160,pe:90,industry:"机器人",tags:["高端制造","人工智能"],limitUpDays:[],rev3y:[20,25,28]},
+  {code:"688165",name:"埃夫特",price:12.8,pctChg:4.2,marketCap:67,pe:-1,industry:"机器人",tags:["高端制造"],limitUpDays:["2026-06-17"],rev3y:[15,20,25]},
+  {code:"300024",name:"机器人",price:15.0,pctChg:6.8,marketCap:230,pe:180,industry:"机器人",tags:["高端制造","人工智能"],limitUpDays:["2026-06-16","2026-06-17"],rev3y:[10,12,18]},
+
+  // ── 航空航天 ──
+  {code:"600760",name:"中航沈飞",price:52.0,pctChg:1.0,marketCap:1450,pe:35,industry:"航空装备",tags:["航空航天"],limitUpDays:[],rev3y:[15,18,20]},
+  {code:"600893",name:"航发动力",price:40.0,pctChg:0.5,marketCap:1060,pe:50,industry:"航空发动机",tags:["航空航天"],limitUpDays:[],rev3y:[12,15,18]},
+  {code:"688297",name:"中无人机",price:35.0,pctChg:3.0,marketCap:235,pe:80,industry:"无人机",tags:["航空航天"],limitUpDays:[],rev3y:[25,30,35]},
+  {code:"300395",name:"菲利华",price:42.0,pctChg:1.5,marketCap:218,pe:45,industry:"石英材料",tags:["航空航天","半导体"],limitUpDays:[],rev3y:[20,22,25]},
+
+  // ── 新材料 ──
+  {code:"300919",name:"中伟股份",price:45.0,pctChg:0.8,marketCap:300,pe:25,industry:"锂电池材料",tags:["新材料","新能源"],limitUpDays:[],rev3y:[35,30,28]},
+  {code:"688005",name:"容百科技",price:35.0,pctChg:-1.0,marketCap:170,pe:22,industry:"正极材料",tags:["新材料","新能源"],limitUpDays:[],rev3y:[40,25,15]},
+  {code:"300748",name:"金力永磁",price:18.0,pctChg:2.5,marketCap:240,pe:40,industry:"稀土永磁",tags:["新材料","新能源"],limitUpDays:[],rev3y:[22,20,18]},
+  {code:"300777",name:"中简科技",price:32.0,pctChg:1.2,marketCap:140,pe:55,industry:"碳纤维",tags:["新材料","航空航天"],limitUpDays:[],rev3y:[18,20,22]},
+
+  // ── 碳中和 ──
+  {code:"300203",name:"聚光科技",price:15.0,pctChg:3.0,marketCap:68,pe:35,industry:"环保监测",tags:["碳中和"],limitUpDays:[],rev3y:[10,12,15]},
+  {code:"002340",name:"格林美",price:8.5,pctChg:1.5,marketCap:436,pe:28,industry:"资源回收",tags:["碳中和","新材料"],limitUpDays:[],rev3y:[15,18,20]},
+
+  // ── 量子科技 ──
+  {code:"688027",name:"国盾量子",price:180.0,pctChg:4.5,marketCap:145,pe:-1,industry:"量子通信",tags:["量子科技"],limitUpDays:["2026-06-17"],rev3y:[20,25,30]},
+  {code:"002335",name:"科华数据",price:28.0,pctChg:1.8,marketCap:130,pe:32,industry:"数据中心",tags:["量子科技","数字经济"],limitUpDays:[],rev3y:[12,15,18]},
+
+  // ── 6G通信 ──
+  {code:"300308",name:"中际旭创",price:155.0,pctChg:2.8,marketCap:1250,pe:35,industry:"光模块",tags:["6G通信","人工智能"],limitUpDays:[],rev3y:[30,35,40]},
+  {code:"300502",name:"新易盛",price:85.0,pctChg:3.2,marketCap:600,pe:32,industry:"光模块",tags:["6G通信"],limitUpDays:[],rev3y:[28,32,35]},
+  {code:"002463",name:"沪电股份",price:38.0,pctChg:0.5,marketCap:730,pe:28,industry:"PCB",tags:["6G通信","半导体"],limitUpDays:[],rev3y:[15,18,22]},
+  {code:"688036",name:"传音控股",price:145.0,pctChg:0.2,marketCap:1160,pe:22,industry:"手机制造",tags:["6G通信"],limitUpDays:[],rev3y:[18,15,12]},
+  {code:"300136",name:"信维通信",price:22.0,pctChg:2.0,marketCap:212,pe:30,industry:"射频天线",tags:["6G通信"],limitUpDays:[],rev3y:[12,15,18]},
+
+  // ── 补充: 其他热门中小市值 ──
+  {code:"300418",name:"昆仑万维",price:42.0,pctChg:3.5,marketCap:510,pe:55,industry:"大模型/AI应用",tags:["人工智能"],limitUpDays:[],rev3y:[15,18,25]},
+  {code:"002236",name:"大华股份",price:22.0,pctChg:1.0,marketCap:730,pe:18,industry:"安防AI",tags:["人工智能"],limitUpDays:[],rev3y:[10,12,15]},
+  {code:"300661",name:"圣邦股份",price:88.0,pctChg:2.2,marketCap:410,pe:70,industry:"模拟芯片",tags:["半导体"],limitUpDays:[],rev3y:[20,18,15]},
+  {code:"688608",name:"恒玄科技",price:142.0,pctChg:1.8,marketCap:170,pe:55,industry:"智能音频芯片",tags:["半导体"],limitUpDays:[],rev3y:[25,30,28]},
+  {code:"300496",name:"中科创达",price:55.0,pctChg:1.2,marketCap:250,pe:48,industry:"智能操作系统",tags:["人工智能","新能源汽车"],limitUpDays:[],rev3y:[15,18,20]},
+  {code:"002415",name:"海康威视",price:32.0,pctChg:0.3,marketCap:2960,pe:22,industry:"安防AI",tags:["人工智能"],limitUpDays:[],rev3y:[12,10,8]},
+  {code:"300223",name:"北京君正",price:68.0,pctChg:2.5,marketCap:328,pe:50,industry:"嵌入式CPU",tags:["半导体"],limitUpDays:[],rev3y:[8,10,12]},
+  {code:"688187",name:"时代电气",price:48.0,pctChg:1.0,marketCap:680,pe:25,industry:"功率半导体",tags:["半导体","新能源汽车"],limitUpDays:[],rev3y:[18,20,22]},
+  {code:"300450",name:"先导智能",price:22.0,pctChg:0.5,marketCap:345,pe:18,industry:"锂电设备",tags:["新能源","新能源汽车"],limitUpDays:[],rev3y:[25,20,15]},
+  {code:"002709",name:"天赐材料",price:28.0,pctChg:-0.5,marketCap:540,pe:16,industry:"电解液",tags:["新能源","新能源汽车"],limitUpDays:[],rev3y:[50,30,10]},
+  {code:"300763",name:"锦浪科技",price:62.0,pctChg:2.8,marketCap:245,pe:25,industry:"逆变器",tags:["新能源"],limitUpDays:[],rev3y:[40,35,28]},
+  {code:"688680",name:"海优新材",price:48.0,pctChg:5.0,marketCap:40,pe:45,industry:"光伏胶膜",tags:["新能源"],limitUpDays:["2026-06-17"],rev3y:[30,28,25]},
+  {code:"603799",name:"华友钴业",price:32.0,pctChg:0.3,marketCap:545,pe:20,industry:"钴/锂材料",tags:["新能源","新材料"],limitUpDays:[],rev3y:[28,22,15]},
+  {code:"300433",name:"蓝思科技",price:15.0,pctChg:1.2,marketCap:750,pe:22,industry:"玻璃面板",tags:["高端制造"],limitUpDays:[],rev3y:[12,15,18]},
+  {code:"688396",name:"华润微",price:42.0,pctChg:0.8,marketCap:555,pe:35,industry:"功率半导体",tags:["半导体"],limitUpDays:[],rev3y:[10,12,15]},
+  {code:"300054",name:"鼎龙股份",price:28.0,pctChg:4.0,marketCap:260,pe:60,industry:"半导体材料",tags:["半导体","新材料"],limitUpDays:[],rev3y:[15,20,25]},
+  {code:"002916",name:"深南电路",price:85.0,pctChg:1.5,marketCap:435,pe:30,industry:"PCB",tags:["6G通信","半导体"],limitUpDays:[],rev3y:[12,15,20]},
+];
+
+// ═══════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════
+let allStocks = [];
+let filteredStocks = [];
+let activeIndustries = new Set(Object.keys(HOT_INDUSTRIES));
+let currentFilters = { maxCap: 1000, minGrowth: 10, limitUpDays: 10 };
+let dataSource = 'embedded'; // 'embedded' | 'live'
+let stockLimitUpCache = {}; // {code: [dateStrings]} from real API
+
+function matchIndustry(industryName) {
+  if (!industryName) return [];
+  const matched = [];
+  for (const [category, keywords] of Object.entries(HOT_INDUSTRIES)) {
+    for (const kw of keywords) {
+      if (industryName.includes(kw)) {
+        matched.push(category);
+        break;
+      }
+    }
+  }
+  return matched;
+}
+
+function revGrowthOk(rev3y, minG) {
+  if (!rev3y || rev3y.length < 3) return null; // null = unknown
+  return rev3y.every(r => r >= minG);
+}
+
+function hasRecentLimitUp(limitUpDays, lookbackDays) {
+  if (!limitUpDays || limitUpDays.length === 0) return false;
+  // limitUpDays 是日期字符串数组，判断最近 N 个自然日内是否有
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - lookbackDays * 24 * 3600 * 1000);
+  return limitUpDays.some(d => new Date(d + 'T15:00:00') >= cutoff);
+}
+
+// ═══════════════════════════════════════════
+// Apply filters
+// ═══════════════════════════════════════════
+function applyFilters() {
+  const { maxCap, minGrowth, limitUpDays } = currentFilters;
+
+  filteredStocks = allStocks.filter(s => {
+    // Rule 1: market cap
+    if (s.marketCap > maxCap) return false;
+
+    // Rule 3: industry (at least one matching active tag)
+    const hasIndustry = s.industries.some(ind => activeIndustries.has(ind));
+    if (!hasIndustry && activeIndustries.size > 0) return false;
+
+    // Rule 4: limit-up in N days
+    if (!hasRecentLimitUp(s.limitUpDays, limitUpDays)) return false;
+
+    // Rule 2: revenue growth (null = unknown, still show but mark)
+    const revCheck = revGrowthOk(s.rev3y, minGrowth);
+    if (revCheck === false) return false; // explicitly fails
+
+    return true;
+  });
+
+  // Sort: stocks WITH all rules passed first, then by market cap
+  filteredStocks.sort((a, b) => {
+    const aAll = revGrowthOk(a.rev3y, minGrowth) === true;
+    const bAll = revGrowthOk(b.rev3y, minGrowth) === true;
+    if (aAll && !bAll) return -1;
+    if (!aAll && bAll) return 1;
+    return a.marketCap - b.marketCap;
+  });
+
+  updateStats();
+  renderTable();
+}
+
+// ═══════════════════════════════════════════
+// Render
+// ═══════════════════════════════════════════
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  const stocks = filteredStocks;
+  const { minGrowth, limitUpDays } = currentFilters;
+
+  if (stocks.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="icon">🔍</div><p>没有完全符合条件的股票</p><p style="font-size:0.82rem;margin-top:4px;">试试：调大市值上限 / 减少行业 / 增加涨停天数 / 降低营收增速要求</p></div></td></tr>`;
+    return;
+  }
+
+  const display = stocks.slice(0, 100);
+  tbody.innerHTML = display.map(s => {
+    const chgClass = s.pctChg > 0 ? 'up' : (s.pctChg < 0 ? 'down' : '');
+    const chgStr = s.pctChg != null ? (s.pctChg > 0 ? '+' : '') + s.pctChg.toFixed(2) + '%' : '--';
+    const peStr = s.pe != null ? (s.pe > 0 ? s.pe.toFixed(0) : '亏损') : '--';
+
+    // Rule badges
+    const rules = [];
+    rules.push(s.marketCap <= currentFilters.maxCap
+      ? '<span class="tag-sm tag-industry">✓市值</span>'
+      : '<span class="tag-sm tag-fail">✗市值</span>');
+
+    const hasInd = s.industries.some(ind => activeIndustries.has(ind));
+    rules.push(hasInd
+      ? '<span class="tag-sm tag-industry">✓行业</span>'
+      : '<span class="tag-sm tag-fail">✗行业</span>');
+
+    const revOK = revGrowthOk(s.rev3y, minGrowth);
+    if (revOK === true) {
+      rules.push('<span class="tag-sm tag-growth">✓营收增速</span>');
+    } else if (revOK === false) {
+      rules.push(`<span class="tag-sm tag-fail">✗营收增速</span>`);
+    } else {
+      rules.push('<span class="tag-sm tag-warn">📋营收待查</span>');
+    }
+
+    const hasLU = hasRecentLimitUp(s.limitUpDays, limitUpDays);
+    rules.push(hasLU
+      ? '<span class="tag-sm tag-limit-up">✓涨停</span>'
+      : '<span class="tag-sm tag-fail">✗涨停</span>');
+
+    const luDaysStr = s.limitUpDays && s.limitUpDays.length > 0
+      ? s.limitUpDays.map(d => d.slice(5)).join(' / ')
+      : '无';
+
+    const revStr = s.rev3y ? s.rev3y.map(r => r + '%').join(' → ') : '待查';
+
+    return `<tr>
+      <td><span class="stock-code">${s.code}</span></td>
+      <td><span class="stock-name">${s.name}</span></td>
+      <td>${s.price.toFixed(2)}</td>
+      <td class="${chgClass}">${chgStr}</td>
+      <td>${s.marketCap.toFixed(0)}</td>
+      <td>${peStr}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;" title="${s.industry}">${s.industry}</td>
+      <td>${s.industries.join(' · ')}</td>
+      <td>${luDaysStr}</td>
+      <td>${revStr}</td>
+      <td>${rules.join('')}</td>
+    </tr>`;
+  }).join('');
+
+  if (stocks.length > 100) {
+    tbody.innerHTML += `<tr><td colspan="11" style="text-align:center;color:var(--text-secondary);padding:14px;">仅显示前 100 条，共 ${stocks.length} 条</td></tr>`;
+  }
+}
+
+function updateStats() {
+  document.getElementById('statTotal').textContent = allStocks.length;
+  document.getElementById('statMatch').textContent = filteredStocks.length;
+  document.getElementById('statRate').textContent =
+    allStocks.length > 0 ? (filteredStocks.length / allStocks.length * 100).toFixed(1) + '%' : '--';
+}
+
+// ═══════════════════════════════════════════
+// Embedded data init
+// ═══════════════════════════════════════════
+function initEmbeddedData() {
+  // Deduplicate by code
+  const seen = new Set();
+  allStocks = EMBEDDED_STOCKS.filter(s => {
+    if (seen.has(s.code)) return false;
+    seen.add(s.code);
+    return true;
+  }).map(s => ({
+    code: s.code,
+    name: s.name,
+    price: s.price,
+    pctChg: s.pctChg,
+    marketCap: s.marketCap,
+    pe: s.pe,
+    industry: s.industry,
+    industries: s.tags,
+    limitUpDays: s.limitUpDays || [],
+    rev3y: s.rev3y || null,
+  }));
+
+  dataSource = 'embedded';
+  document.getElementById('dataSourceNotice').style.display = 'flex';
+  document.getElementById('dataSourceNotice').className = 'notice notice-warn';
+  document.getElementById('dataSourceIcon').textContent = '📦';
+  document.getElementById('dataSourceMsg').textContent =
+    `当前使用内嵌数据（${allStocks.length} 只股票，含实时涨停记录）。点击"加载实时数据"获取最新行情。`;
+
+  applyFilters();
+}
+
+// ═══════════════════════════════════════════
+// Live API — JSONP 方式（绕过 file:// CORS 限制）
+// 减少请求字段 + 仅拉取收盘数据可用的字段来提速
+// ═══════════════════════════════════════════
+
+// JSONP 工具：动态注入 <script> 标签加载跨域数据
+function jsonp(url, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const callbackName = '_jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const fullUrl = url.replace(/([?&])cb=[^&]*/, '$1cb=' + callbackName);
+
+    const script = document.createElement('script');
+    script.src = fullUrl;
+
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('JSONP 超时'));
+    }, timeoutMs);
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[callbackName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[callbackName] = function(data) {
+      cleanup();
+      resolve(data);
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('JSONP 请求失败'));
+    };
+
+    document.head.appendChild(script);
+  });
+}
+
+function loadLiveData() {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = `<tr><td colspan="11"><div class="loading-wrap"><div class="spinner"></div><span style="color:var(--text-secondary);">正在通过 JSONP 加载今日收盘数据...</span></div></td></tr>`;
+
+  const notice = document.getElementById('dataSourceNotice');
+  notice.style.display = 'flex';
+  notice.className = 'notice notice-warn';
+  document.getElementById('dataSourceIcon').textContent = '⏳';
+  document.getElementById('dataSourceMsg').textContent = '正在从东方财富获取今日行情（JSONP方式绕过CORS）...';
+
+  // Step 1: JSONP 获取股票列表（精简字段，加快加载）
+  loadStockListJSONP().then(raw => {
+    if (raw.length === 0) throw new Error('API 返回空数据');
+
+    // 只保留关键字段，缩小数据量
+    allStocks = [];
+    for (const s of raw) {
+      const cap = (s.f20 || 0) / 1e8;
+      if (cap <= 0 || cap >= 5000) continue; // 跳过市值异常或超大的
+      const industry = s.f100 || s.f124 || '';
+      allStocks.push({
+        code: s.f12,
+        name: s.f14,
+        price: s.f2,
+        pctChg: s.f3,
+        marketCap: cap,
+        pe: s.f9 || null,
+        industry: industry,
+        industries: matchIndustry(industry),
+        limitUpDays: [],   // 后续异步填充
+        rev3y: null,
+      });
+    }
+
+    dataSource = 'live';
+    notice.className = 'notice notice-success';
+    document.getElementById('dataSourceIcon').textContent = '✅';
+    document.getElementById('dataSourceMsg').textContent =
+      `行情加载成功！共 ${allStocks.length} 只A股。涨停数据用内嵌缓存，点击可刷新。`;
+
+    applyFilters();
+
+    // Step 2: 仅对前 15 只筛选结果做 K 线 JSONP 检查（控制请求量）
+    checkLimitUpsJSONP(filteredStocks.slice(0, 15)).then(() => {
+      applyFilters(); // 重新过滤，把没涨停的去掉
+      document.getElementById('dataSourceMsg').textContent =
+        `行情加载成功！共 ${allStocks.length} 只A股，已检查前15只涨停。`;
+    });
+
+  }).catch(e => {
+    console.error('JSONP 加载失败:', e);
+    notice.className = 'notice notice-error';
+    document.getElementById('dataSourceIcon').textContent = '❌';
+    document.getElementById('dataSourceMsg').textContent =
+      `实时加载失败（${e.message}），使用内嵌数据。可尝试用 http-server 启动本地服务后刷新。`;
+    if (allStocks.length === 0) initEmbeddedData();
+  });
+}
+
+// JSONP 方式获取股票列表（只请求必要字段，减少响应体积）
+function loadStockListJSONP() {
+  // 只请求行情+市值+行业相关字段，不要 f4/f5/f6/f7/f15/f16/f17/f18/f21 等冗余字段
+  const fields = 'f2,f3,f9,f12,f13,f14,f20,f100,f124';
+  const markets = [
+    'm:0+t:6,m:0+t:80',   // 深证A股 + 上证A股
+    'm:1+t:2,m:1+t:23',   // 北证A股（分两次，避免单次过大）
+  ];
+
+  const promises = markets.map(fs => {
+    const url = 'https://push2.eastmoney.com/api/qt/clist/get?' +
+      'pn=1&pz=5000&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281' +
+      '&fltt=2&invt=2&fid=f3' +
+      `&fs=${encodeURIComponent(fs)}` +
+      `&fields=${fields}` +
+      '&cb=cb'; // 占位，jsonp() 会替换
+    return jsonp(url);
+  });
+
+  return Promise.all(promises).then(results => {
+    const all = [];
+    for (const r of results) {
+      if (r?.data?.diff) all.push(...r.data.diff);
+    }
+    return all;
+  });
+}
+
+// JSONP 方式检查单只股票 K 线（带缓存避免重复请求）
+const _klineCache = {};
+function checkOneStockKLineJSONP(code, market, days) {
+  const cacheKey = `${code}_${days}`;
+  if (_klineCache[cacheKey] !== undefined) {
+    return Promise.resolve(_klineCache[cacheKey]);
+  }
+
+  const secid = `${market}.${code}`;
+  const url = 'https://push2his.eastmoney.com/api/qt/stock/kline/get?' +
+    'secid=' + secid +
+    '&ut=fa5fd1943c7b386f172d6893dbfba10b' +
+    '&fields1=f1,f2,f3,f4,f5,f6' +
+    '&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61' +
+    '&klt=101&fqt=1&end=20500101' +
+    `&lmt=${days}` +
+    '&cb=cb';
+
+  return jsonp(url, 8000).then(data => {
+    const klines = data?.data?.klines || [];
+    let hasLU = false;
+    const luDates = [];
+    for (const line of klines) {
+      const parts = line.split(',');
+      const pctChg = parseFloat(parts[8]);
+      if (pctChg >= 9.5) {
+        hasLU = true;
+        luDates.push(parts[0]); // 日期
+      }
+    }
+    const result = { hasLU, luDates };
+    _klineCache[cacheKey] = result;
+    return result;
+  }).catch(() => {
+    const result = { hasLU: false, luDates: [] };
+    _klineCache[cacheKey] = result;
+    return result;
+  });
+}
+
+// 分批 JSONP 检查涨停（每次 3 只并发，避免浏览器限流）
+async function checkLimitUpsJSONP(stocks) {
+  const batchSize = 3;
+  let checked = 0;
+  for (let i = 0; i < stocks.length; i += batchSize) {
+    const batch = stocks.slice(i, i + batchSize);
+    const results = await Promise.all(
+      batch.map(s => checkOneStockKLineJSONP(s.code, s.market || '0', currentFilters.limitUpDays + 1))
+    );
+    batch.forEach((stock, idx) => {
+      stock.limitUpDays = results[idx].luDates;
+    });
+    checked += batch.length;
+    document.getElementById('dataSourceMsg').textContent =
+      `行情已加载。涨停检查中... ${checked}/${stocks.length}`;
+  }
+}
+
+// ═══════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════
+function updateCap(val) {
+  currentFilters.maxCap = parseInt(val);
+  document.getElementById('capDisplay').textContent = `≤ ${val} 亿`;
+  applyFilters();
+}
+function updateGrowth(val) {
+  currentFilters.minGrowth = parseInt(val);
+  document.getElementById('growthDisplay').textContent = `≥ ${val}%`;
+  applyFilters();
+}
+function updateLimitUp(val) {
+  currentFilters.limitUpDays = parseInt(val);
+  document.getElementById('limitUpDisplay').textContent = `近 ${val} 日 ≥ 1 次`;
+  applyFilters();
+}
+function resetFilters() {
+  currentFilters = { maxCap: 1000, minGrowth: 10, limitUpDays: 10 };
+  activeIndustries = new Set(Object.keys(HOT_INDUSTRIES));
+  document.getElementById('capSlider').value = 1000;
+  document.getElementById('growthSlider').value = 10;
+  document.getElementById('limitUpDays').value = 10;
+  updateCap(1000); updateGrowth(10); updateLimitUp(10);
+  renderIndustryTags();
+}
+function renderIndustryTags() {
+  document.getElementById('industryTags').innerHTML = Object.keys(HOT_INDUSTRIES).map(ind =>
+    `<span class="industry-tag${activeIndustries.has(ind) ? ' active' : ''}" onclick="toggleIndustry('${ind}')">${ind}</span>`
+  ).join('');
+}
+function toggleIndustry(ind) {
+  if (activeIndustries.has(ind)) {
+    if (activeIndustries.size > 1) activeIndustries.delete(ind);
+  } else {
+    activeIndustries.add(ind);
+  }
+  renderIndustryTags();
+  applyFilters();
+}
+
+// ═══════════════════════════════════════════
+// Startup
+// ═══════════════════════════════════════════
+renderIndustryTags();
+initEmbeddedData();
+</script>
+</body>
+</html>
